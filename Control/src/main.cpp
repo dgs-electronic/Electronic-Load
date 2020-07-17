@@ -1,8 +1,8 @@
 #include <Arduino.h>
-/*
- * Example to demonstrate thread definition, semaphores, and thread sleep.
- */
 #include <FreeRTOS_TEENSY4.h>
+#include "Messungen.h"
+#include "StromAusgabe.h"
+#include "RS232Kommunikation.h"
 
 // The LED is attached to pin 13 on the Teensy 4.0
 const uint8_t LED_PIN = 13;
@@ -17,12 +17,12 @@ SemaphoreHandle_t sem;
 static void Thread1(void* arg) {
   while (1) {
 
-    Serial.println("Thread 1 : Waiting on Thread 2 to turn LED OFF");
+    //Serial.println("Thread 1 : Waiting on Thread 2 to turn LED OFF");
 
     // Wait for signal from thread 2.
     xSemaphoreTake(sem, portMAX_DELAY);
 
-    Serial.println("Thread 1 : Turning LED OFF");
+    //Serial.println("Thread 1 : Turning LED OFF");
 
     // Turn LED off.
     digitalWrite(LED_PIN, LOW);
@@ -41,12 +41,12 @@ static void Thread2(void* arg) {
     // Turn LED on.
     digitalWrite(LED_PIN, HIGH);
 
-    Serial.println("Thread 2 : Turning LED ON");
+    //Serial.println("Thread 2 : Turning LED ON");
 
     // Sleep for 200 milliseconds.
     vTaskDelay((200L * configTICK_RATE_HZ) / 1000L);
 
-    Serial.println("Thread 2 : Asking Thread 1 to turn LED OFF");
+    //Serial.println("Thread 2 : Asking Thread 1 to turn LED OFF");
 
     // Signal thread 1 to turn LED off.
     xSemaphoreGive(sem);
@@ -55,11 +55,24 @@ static void Thread2(void* arg) {
     vTaskDelay((200L * configTICK_RATE_HZ) / 1000L);
   }
 }
+
+void mainTask(void* pv)
+{
+  for (;;)
+  {
+    digitalWrite(LED_PIN, HIGH);
+    //Serial.println("Main-Task.....");
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    digitalWrite(LED_PIN, LOW);
+  }
+}
+
 //------------------------------------------------------------------------------
 void setup() {
   portBASE_TYPE s1, s2;
 
-  Serial.begin(9600);
+  pinMode(LED_PIN, OUTPUT);
+  Serial.begin(28800);
   
   // initialize semaphore
   sem = xSemaphoreCreateCounting(1, 0);
@@ -69,6 +82,18 @@ void setup() {
 
   // create task at priority one
   s2 = xTaskCreate(Thread2, NULL, configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+
+  // Task generieren um alles Messungen auszuführen
+  xTaskCreate(MessenTask, "ADC-Task", 1024, NULL, 1, NULL);
+
+  // Task generieren um Strom auszugeben
+  xTaskCreate(StromAusgabeTask, "DAC-Task", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+
+  //Task generieren um RS232 Kommunikation abzuwickeln
+  xTaskCreate(RS232Task, "RS232-Task", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+
+  //Haupt-Task generieren 
+  xTaskCreate(mainTask, "Haupttask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
   // check for creation errors
   if (sem== NULL || s1 != pdPASS || s2 != pdPASS ) {
