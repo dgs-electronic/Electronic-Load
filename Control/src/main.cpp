@@ -5,83 +5,61 @@
 #include "RS232Kommunikation.h"
 
 // The LED is attached to pin 13 on the Teensy 4.0
-const uint8_t LED_PIN = 13;
+#define LED_PIN 13
+#define LED_3 10
+#define LED_4 09
+#define LED_5 06
+#define LED_6 05
 
-// Declare a semaphore handle.
-SemaphoreHandle_t sem;
-//------------------------------------------------------------------------------
-/*
- * Thread 1, turn the LED off when signalled by thread 2.
- */
-// Declare the thread function for thread 1.
-static void Thread1(void* arg) {
-  while (1) {
+xQueueHandle ADC_Queue_Handle = 0;
+xQueueHandle RS232Send_Queue_Handle = 0;
 
-    //Serial.println("Thread 1 : Waiting on Thread 2 to turn LED OFF");
-
-    // Wait for signal from thread 2.
-    xSemaphoreTake(sem, portMAX_DELAY);
-
-    //Serial.println("Thread 1 : Turning LED OFF");
-
-    // Turn LED off.
-    digitalWrite(LED_PIN, LOW);
-  }
-}
-//------------------------------------------------------------------------------
-/*
- * Thread 2, turn the LED on and signal thread 1 to turn the LED off.
- */
-// Declare the thread function for thread 2.
-static void Thread2(void* arg) {
-
-  pinMode(LED_PIN, OUTPUT);
-
-  while (1) {
-    // Turn LED on.
-    digitalWrite(LED_PIN, HIGH);
-
-    //Serial.println("Thread 2 : Turning LED ON");
-
-    // Sleep for 200 milliseconds.
-    vTaskDelay((200L * configTICK_RATE_HZ) / 1000L);
-
-    //Serial.println("Thread 2 : Asking Thread 1 to turn LED OFF");
-
-    // Signal thread 1 to turn LED off.
-    xSemaphoreGive(sem);
-
-    // Sleep for 200 milliseconds.
-    vTaskDelay((200L * configTICK_RATE_HZ) / 1000L);
-  }
-}
-
-void mainTask(void* pv)
+void mainTask(void *pv)
 {
+  struct ADCMessage sQMsgRec;
+  uint16_t uiLEDCnt = 0;
   for (;;)
   {
-    digitalWrite(LED_PIN, HIGH);
+    if (uiLEDCnt < 10)
+    {
+      digitalWrite(LED_PIN, LOW);
+    }
+    else
+    {
+      digitalWrite(LED_PIN, HIGH);
+    }
+
+    uiLEDCnt = (uiLEDCnt + 1) % 20;
+
     //Serial.println("Main-Task.....");
-    vTaskDelay(500 / portTICK_PERIOD_MS);
-    digitalWrite(LED_PIN, LOW);
+
+    if (xQueueReceive(ADC_Queue_Handle, &sQMsgRec, 20))
+    {
+      Serial.print("Analog In 0 Spannung = ");
+      Serial.print(sQMsgRec.dStrom1_1A0, 4);
+      Serial.println(" V");
+    }
+    else
+    {
+      Serial.println("no messages from ADC!");
+    }
+
+    vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
 
 //------------------------------------------------------------------------------
-void setup() {
-  portBASE_TYPE s1, s2;
+void setup()
+{
 
   pinMode(LED_PIN, OUTPUT);
   Serial.begin(28800);
-  
-  // initialize semaphore
-  sem = xSemaphoreCreateCounting(1, 0);
 
-  // create task at priority two
-  s1 = xTaskCreate(Thread1, NULL, configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+  // Queue_Handle generieren um Nchrichten mit dem Messen-Task auszutauschen
+  ADC_Queue_Handle = xQueueCreate(10, sizeof(struct ADCMessage));
 
-  // create task at priority one
-  s2 = xTaskCreate(Thread2, NULL, configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+  //Queue Handle generieren um Nachrichten via RS232 zu verschicken
+  RS232Send_Queue_Handle = xQueueCreate(10, sizeof(struct ADCMessage));
 
   // Task generieren um alles Messungen auszuführen
   xTaskCreate(MessenTask, "ADC-Task", 1024, NULL, 1, NULL);
@@ -92,25 +70,21 @@ void setup() {
   //Task generieren um RS232 Kommunikation abzuwickeln
   xTaskCreate(RS232Task, "RS232-Task", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-  //Haupt-Task generieren 
+  //Haupt-Task generieren
   xTaskCreate(mainTask, "Haupttask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-
-  // check for creation errors
-  if (sem== NULL || s1 != pdPASS || s2 != pdPASS ) {
-    Serial.println("Creation problem");
-    while(1);
-  }
 
   Serial.println("Starting the scheduler !");
 
   // start scheduler
   vTaskStartScheduler();
   Serial.println("Insufficient RAM");
-  while(1);
+  while (1)
+    ;
 }
 //------------------------------------------------------------------------------
 // WARNING idle loop has a very small stack (configMINIMAL_STACK_SIZE)
 // loop must never block
-void loop() {
+void loop()
+{
   // Not used.
 }
