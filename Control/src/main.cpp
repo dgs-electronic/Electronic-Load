@@ -6,7 +6,7 @@
 
 // The LED is attached to pin 13 on the Teensy 4.0
 #define LED_PIN 13
-#define LED_3 10
+
 #define LED_4 09
 #define LED_5 06
 #define LED_6 05
@@ -54,6 +54,9 @@ void setup()
 
   pinMode(LED_PIN, OUTPUT);
   Serial.begin(28800);
+
+  //Stromausgabe und DACs initialisieren
+  setupStromAusgabe();
 
   // Queue_Handle generieren um Nchrichten mit dem Messen-Task auszutauschen
   ADC_Queue_Handle = xQueueCreate(10, sizeof(struct ADCMessage));
